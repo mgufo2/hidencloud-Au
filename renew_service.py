@@ -123,26 +123,38 @@ def renew_service(page):
         log("等待 0.9 秒...")
         time.sleep(0.9)
 
-        # +++ 解决方案：(方案十) 使用 dispatch_event() 派发事件 +++
+        # +++ 解决方案：(方案十一) 模拟物理鼠标坐标点击 +++
         log("步骤 2: 正在查找 'Create Invoice' 按钮...")
         create_invoice_button = page.locator('button:has-text("Create Invoice")')
         
         create_invoice_button.wait_for(state="visible", timeout=30000)
         
-        log("✅ 'Create Invoice' 按钮已可见，尝试使用 dispatch_event('click') 强制执行...")
+        log("✅ 'Create Invoice' 按钮已可见，正在获取其坐标...")
         
-        # +++ 关键修改 +++
-        # 这是最后一种模拟点击的方式。它不使用 .click()，而是直接在DOM元素上“派发”一个点击事件。
-        create_invoice_button.dispatch_event('click')
-        
-        log("按钮已点击 (dispatch_event)。正在等待发票页面内容加载...")
-        
-        # 3. 等待结果：我们仍然等待页面上的关键内容
-        try:
-            # 使用一个更宽泛、更灵活的选择器来查找成功消息
-            success_message_locator = page.locator(':text-matches("Success! Invoice")')
+        # 1. 获取按钮的边界框 (x, y, width, height)
+        box = create_invoice_button.bounding_box()
+        if not box:
+            log("❌ 错误：无法获取 'Create Invoice' 按钮的坐标。")
+            raise Exception("Failed to get bounding box for 'Create Invoice' button.")
             
-            # 等待这个元素在 30 秒内变为可见
+        # 2. 计算按钮中心点
+        center_x = box['x'] + box['width'] / 2
+        center_y = box['y'] + box['height'] / 2
+        
+        log(f"按钮中心坐标为: X={center_x}, Y={center_y}。模拟物理鼠标移动并点击...")
+        
+        # 3. 模拟鼠标移动到中心点
+        page.mouse.move(center_x, center_y, steps=5) # steps=5 模拟一个平滑移动
+        page.wait_for_timeout(100) # 暂停
+        
+        # 4. 模拟物理点击 (按下 -> 抬起)
+        page.mouse.click(center_x, center_y, delay=60)
+        
+        log("按钮已点击 (物理模拟)。正在等待发票页面内容加载...")
+        
+        # 5. 等待结果：我们仍然等待页面上的关键内容
+        try:
+            success_message_locator = page.locator(':text-matches("Success! Invoice")')
             success_message_locator.wait_for(state="visible", timeout=30000)
             
             log(f"🎉 成功跳转到发票页面 (检测到Success消息)。")
@@ -160,7 +172,7 @@ def renew_service(page):
         pay_button.wait_for(state="visible", timeout=10000) 
         
         log("✅ 'Pay' 按钮已找到，正在点击...")
-        pay_button.click()
+        pay_button.click() # Pay 按钮通常不会有这么强的反制
         log("✅ 'Pay' 按钮已点击。")
         
         time.sleep(5)
@@ -204,7 +216,7 @@ def main():
 
             if not renew_service(page):
                 log("续费失败，程序终止。")
-                sys.exit(1)
+                sys.exit。
 
             log("🎉🎉🎉 自动化续费任务成功完成！ 🎉🎉🎉")
         except Exception as e:
