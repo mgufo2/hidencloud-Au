@@ -123,30 +123,36 @@ def renew_service(page):
         log("等待 0.9 秒...")
         time.sleep(0.9)
 
-        # +++ 解决方案：处理页面内部跳转 (In-Page Navigation) +++
+        # +++ 解决方案：(方案五) 等待新页面的 *内容* 出现 +++
         log("步骤 2: 正在查找 'Create Invoice' 按钮...")
         create_invoice_button = page.locator('button:has-text("Create Invoice")')
         create_invoice_button.wait_for(state="visible", timeout=30000)
         
-        log("✅ 'Create Invoice' 按钮已找到，正在点击并等待 *当前页面* 跳转...")
+        log("✅ 'Create Invoice' 按钮已找到，正在点击...")
         
-        # 点击按钮，这将触发当前页面的导航
+        # 点击按钮，这将触发客户端导航或重定向
         create_invoice_button.click()
         
+        log("按钮已点击。正在等待发票页面内容加载...")
+        
         # 关键修改：
-        # 等待页面 URL 变为包含 /payment/invoice/ 的新 URL
-        # 使用 "domcontentloaded" 代替 "networkidle"，因为它更可靠且更快
+        # 我们不再等待 URL 变化（因为它不可靠）。
+        # 我们直接等待新页面上的 *关键元素* 出现。
+        # 根据截图 'image_7bdc43.png'，我们等待 "Success!" 消息。
         try:
-            page.wait_for_url(
-                "**/payment/invoice/**", 
-                timeout=30000, 
-                wait_until="domcontentloaded"  # <--- 这是关键变化！
-            )
-            log(f"🎉 成功跳转到发票页面: {page.url}")
+            # 查找那个绿色的 "Success! Invoice has been generated successfully" 提示框
+            success_message_locator = page.locator('div:has-text("Success! Invoice has been generated successfully")')
+            
+            # 等待这个元素在 30 秒内变为可见
+            success_message_locator.wait_for(state="visible", timeout=30000)
+            
+            log(f"🎉 成功跳转到发票页面 (检测到Success消息)。")
+            log(f"当前 URL: {page.url}") # 打印一下URL，确认它是否已更改
+            
         except PlaywrightTimeoutError:
-            log("❌ 错误：点击 'Create Invoice' 后，当前页面未在30秒内跳转到发票页面。")
-            page.screenshot(path="invoice_navigation_timeout.png")
-            raise Exception("Failed to navigate to invoice page after clicking 'Create Invoice'.")
+            log("❌ 错误：点击 'Create Invoice' 后，未在30秒内检测到 'Success!' 消息。")
+            page.screenshot(path="invoice_content_timeout.png")
+            raise Exception("Failed to find success message after clicking 'Create Invoice'.")
         
         # +++ 步骤 3：在 *当前* 发票页面上操作 +++
         log("步骤 3: 正在查找可见的 'Pay' 按钮...")
