@@ -117,18 +117,15 @@ def renew_service(page):
         # +++ 解决方案：(方案十二) 绕过UI，直接发送API POST请求 +++
         log("步骤 1: 绕过UI，直接向API发送续费POST请求...")
         
-        # page.request 会自动使用当前 'page' 的 cookies，因此我们是已登录状态
-        # 根据您的截图，我们POST到 RENEW_API_URL
-        # 我们假设免费续订不需要 payload (POST body)，如果需要，后续再加
-        # 我们设置 fail_on_status_code=False 来手动处理 302 跳转
         response = page.request.post(RENEW_API_URL, fail_on_status_code=False)
 
-        log(f"API 响应状态: {response.status()}")
+        # +++ 关键修复：使用 .status (属性) 而不是 .status() (方法) +++
+        log(f"API 响应状态: {response.status}")
 
         # 检查是否是我们预期的 302 Found
-        if response.status() == 302:
+        if response.status == 302:
             # 从响应头中获取 'Location'
-            invoice_url = response.headers().get('location')
+            invoice_url = response.headers.get('location')
             
             if invoice_url and "/payment/invoice/" in invoice_url:
                 log(f"🎉 成功创建Invoice (API)！正在跳转到: {invoice_url}")
@@ -138,12 +135,11 @@ def renew_service(page):
                 log(f"❌ 错误：API返回了302，但没有找到有效的发票URL。Location: {invoice_url}")
                 raise Exception("API returned 302 but no valid invoice URL found.")
         else:
-            log(f"❌ 错误：API请求失败。预期状态 302，但收到了 {response.status()}。")
+            log(f"❌ 错误：API请求失败。预期状态 302，但收到了 {response.status}。")
             page.screenshot(path="api_post_failed.png")
-            raise Exception(f"API request failed with status {response.status()}.")
+            raise Exception(f"API request failed with status {response.status}.")
         
         # +++ 步骤 2：在 *当前* 发票页面上操作 +++
-        # (原 步骤 3)
         log("步骤 2: 正在查找可见的 'Pay' 按钮...")
         
         pay_button = page.locator('a:has-text("Pay"):visible, button:has-text("Pay"):visible').first
