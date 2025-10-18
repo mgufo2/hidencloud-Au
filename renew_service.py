@@ -12,6 +12,7 @@ HIDENCLOUD_PASSWORD = os.environ.get('HIDENCLOUD_PASSWORD')
 BASE_URL = "https://dash.hidencloud.com"
 LOGIN_URL = f"{BASE_URL}/auth/login"
 SERVICE_URL = f"{BASE_URL}/service/71309/manage"
+RENEW_API_URL = f"{BASE_URL}/service/71309/renew" # <--- 从您的抓包中获取
 
 # Cookie 名称
 COOKIE_NAME = "remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d"
@@ -113,66 +114,43 @@ def renew_service(page):
         
         log("服务管理页面已加载。")
 
-        log("步骤 1: 正在查找并点击 'Renew' 按钮...")
-        renew_button = page.locator('button:has-text("Renew")')
-        renew_button.wait_for(state="visible", timeout=30000)
-        renew_button.click()
-        log("✅ 'Renew' 按钮已点击。")
+        # +++ 解决方案：(方案十二) 绕过UI，直接发送API POST请求 +++
+        log("步骤 1: 绕过UI，直接向API发送续费POST请求...")
         
-        # --- 等待 0.9 秒 ---
-        log("等待 0.9 秒...")
-        time.sleep(0.9)
+        # page.request 会自动使用当前 'page' 的 cookies，因此我们是已登录状态
+        # 根据您的截图，我们POST到 RENEW_API_URL
+        # 我们假设免费续订不需要 payload (POST body)，如果需要，后续再加
+        # 我们设置 fail_on_status_code=False 来手动处理 302 跳转
+        response = page.request.post(RENEW_API_URL, fail_on_status_code=False)
 
-        # +++ 解决方案：(方案十一) 模拟物理鼠标坐标点击 +++
-        log("步骤 2: 正在查找 'Create Invoice' 按钮...")
-        create_invoice_button = page.locator('button:has-text("Create Invoice")')
-        
-        create_invoice_button.wait_for(state="visible", timeout=30000)
-        
-        log("✅ 'Create Invoice' 按钮已可见，正在获取其坐标...")
-        
-        # 1. 获取按钮的边界框 (x, y, width, height)
-        box = create_invoice_button.bounding_box()
-        if not box:
-            log("❌ 错误：无法获取 'Create Invoice' 按钮的坐标。")
-            raise Exception("Failed to get bounding box for 'Create Invoice' button.")
+        log(f"API 响应状态: {response.status()}")
+
+        # 检查是否是我们预期的 302 Found
+        if response.status() == 302:
+            # 从响应头中获取 'Location'
+            invoice_url = response.headers().get('location')
             
-        # 2. 计算按钮中心点
-        center_x = box['x'] + box['width'] / 2
-        center_y = box['y'] + box['height'] / 2
+            if invoice_url and "/payment/invoice/" in invoice_url:
+                log(f"🎉 成功创建Invoice (API)！正在跳转到: {invoice_url}")
+                # 手动跳转到发票页面
+                page.goto(invoice_url, wait_until="networkidle")
+            else:
+                log(f"❌ 错误：API返回了302，但没有找到有效的发票URL。Location: {invoice_url}")
+                raise Exception("API returned 302 but no valid invoice URL found.")
+        else:
+            log(f"❌ 错误：API请求失败。预期状态 302，但收到了 {response.status()}。")
+            page.screenshot(path="api_post_failed.png")
+            raise Exception(f"API request failed with status {response.status()}.")
         
-        log(f"按钮中心坐标为: X={center_x}, Y={center_y}。模拟物理鼠标移动并点击...")
-        
-        # 3. 模拟鼠标移动到中心点
-        page.mouse.move(center_x, center_y, steps=5) # steps=5 模拟一个平滑移动
-        page.wait_for_timeout(100) # 暂停
-        
-        # 4. 模拟物理点击 (按下 -> 抬起)
-        page.mouse.click(center_x, center_y, delay=60)
-        
-        log("按钮已点击 (物理模拟)。正在等待发票页面内容加载...")
-        
-        # 5. 等待结果：我们仍然等待页面上的关键内容
-        try:
-            success_message_locator = page.locator(':text-matches("Success! Invoice")')
-            success_message_locator.wait_for(state="visible", timeout=30000)
-            
-            log(f"🎉 成功跳转到发票页面 (检测到Success消息)。")
-            log(f"当前 URL: {page.url}")
-            
-        except PlaywrightTimeoutError:
-            log("❌ 错误：点击 'Create Invoice' 后，未在30秒内检测到 'Success!' 消息。")
-            page.screenshot(path="invoice_content_timeout.png")
-            raise Exception("Failed to find success message after clicking 'Create Invoice'.")
-        
-        # +++ 步骤 3：在 *当前* 发票页面上操作 +++
-        log("步骤 3: 正在查找可见的 'Pay' 按钮...")
+        # +++ 步骤 2：在 *当前* 发票页面上操作 +++
+        # (原 步骤 3)
+        log("步骤 2: 正在查找可见的 'Pay' 按钮...")
         
         pay_button = page.locator('a:has-text("Pay"):visible, button:has-text("Pay"):visible').first
         pay_button.wait_for(state="visible", timeout=10000) 
         
         log("✅ 'Pay' 按钮已找到，正在点击...")
-        pay_button.click() # Pay 按钮通常不会有这么强的反制
+        pay_button.click() 
         log("✅ 'Pay' 按钮已点击。")
         
         time.sleep(5)
@@ -216,13 +194,13 @@ def main():
 
             if not renew_service(page):
                 log("续费失败，程序终止。")
-                sys.exit(1) # <--- 语法错误已修复
+                sys.exit(1)
 
             log("🎉🎉🎉 自动化续费任务成功完成！ 🎉🎉🎉")
         except Exception as e:
             log(f"💥 主程序发生严重错误: {e}")
             if 'page' in locals() and page:
-                page.screenshot(path="main_critical_error.png") # <--- 语法错误已修复
+                page.screenshot(path="main_critical_error.png")
             sys.exit(1)
         finally:
             log("关闭浏览器。")
