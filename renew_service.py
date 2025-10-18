@@ -123,29 +123,22 @@ def renew_service(page):
         log("等待 0.9 秒...")
         time.sleep(0.9)
 
-        # +++ 解决方案：(方案八) 修复 "state" 错误 + 保留 "Human-like" 点击 +++
+        # +++ 解决方案：(方案九) 使用 JavaScript evaluate() 强制点击 +++
         log("步骤 2: 正在查找 'Create Invoice' 按钮...")
         create_invoice_button = page.locator('button:has-text("Create Invoice")')
         
-        # +++ 关键修复 +++
-        # 修复错误：'enabled' 不是 wait_for 的有效状态。改回 'visible'。
         create_invoice_button.wait_for(state="visible", timeout=30000)
         
-        log("✅ 'Create Invoice' 按钮已可见，尝试 'human-like' 点击...")
+        log("✅ 'Create Invoice' 按钮已可见，尝试使用 JavaScript .click() 强制执行...")
         
-        # 1. 模拟人类操作：悬停
-        create_invoice_button.hover()
-        page.wait_for_timeout(150) # 暂停150毫秒
+        # +++ 关键修改 +++
+        # 使用 evaluate 在浏览器上下文中执行 'node.click()'
+        # 这将绕过 Playwright 的 'isTrusted' 标志，使其看起来像一个真正的JS点击
+        create_invoice_button.evaluate('node => node.click()')
         
-        # 2. 模拟人类操作：点击 (带轻微延迟)
-        create_invoice_button.click(
-            delay=60,
-            button="left"
-        )
+        log("按钮已点击 (JS)。正在等待发票页面内容加载...")
         
-        log("按钮已点击。正在等待发票页面内容加载...")
-        
-        # 3. 等待结果：等待页面上的关键内容
+        # 3. 等待结果：我们仍然等待页面上的关键内容
         try:
             # 使用一个更宽泛、更灵活的选择器来查找成功消息
             success_message_locator = page.locator(':text-matches("Success! Invoice")')
@@ -178,11 +171,11 @@ def renew_service(page):
         return True
     
     except PlaywrightTimeoutError as e:
-        log(f"❌ 续费任务超时: 未在规定时间内找到元素。请检查选择器或页面是否已更改。错误: {e}")
+        log(f"❌ <b>续费任务超时:</b> 未在规定时间内找到元素。请检查选择器或页面是否已更改。错误: {e}")
         page.screenshot(path="renew_timeout_error.png")
         return False
     except Exception as e:
-        log(f"❌ 续费任务执行过程中发生未知错误: {e}")
+        log(f"❌ <b>续费任务执行过程中发生未知错误:</b> {e}")
         page.screenshot(path="renew_general_error.png")
         return False
 
