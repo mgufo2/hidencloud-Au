@@ -19,7 +19,7 @@ COOKIE_NAME = "remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d"
 
 def log(message):
     """打印带时间戳的日志"""
-    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}", flush=True)
+    print(f"[{time.strftime('%Y-%m-%d %H:M:%S')}] {message}", flush=True)
 
 def login(page):
     """
@@ -114,60 +114,58 @@ def renew_service(page):
         
         log("服务管理页面已加载。")
 
-        # +++ 解决方案：(方案十四) 完美复刻API请求 +++
+        log("步骤 1: 正在查找并点击 'Renew' 按钮...")
+        renew_button = page.locator('button:has-text("Renew")')
+        renew_button.wait_for(state="visible", timeout=30000)
+        renew_button.click()
+        log("✅ 'Renew' 按钮已点击。")
         
-        # 步骤 1: 从页面的 meta 标签中抓取 CSRF 令牌
-        log("步骤 1: 正在从页面抓取 CSRF 令牌...")
-        csrf_token_locator = page.locator('meta[name="csrf-token"]')
-        csrf_token = csrf_token_locator.get_attribute('content')
+        time.sleep(0.9)
 
-        if not csrf_token:
-            log("❌ 错误：未能从 <meta name=\"csrf-token\"> 标签中找到 CSRF 令牌。")
-            page.screenshot(path="csrf_token_not_found.png")
-            raise Exception("CSRF Token not found in meta tag.")
+        # +++ 解决方案：(方案十五) 诊断物理点击的失败原因 +++
+        log("步骤 2: 正在查找 'Create Invoice' 按钮...")
+        create_invoice_button = page.locator('button:has-text("Create Invoice")')
+        create_invoice_button.wait_for(state="visible", timeout=30000)
+        
+        log("✅ 'Create Invoice' 按钮已可见，正在获取其坐标...")
+        
+        box = create_invoice_button.bounding_box()
+        if not box:
+            log("❌ 错误：无法获取 'Create Invoice' 按钮的坐标。")
+            raise Exception("Failed to get bounding box for 'Create Invoice' button.")
             
-        log(f"✅ 成功抓取到 CSRF 令牌。 (令牌开头: {csrf_token[:6]}...)")
-
-        # 步骤 2: 准备 "完美" 的请求头和表单数据
-        log('步骤 2: 绕过UI，准备发送 "完美复刻" 的POST请求...')
+        center_x = box['x'] + box['width'] / 2
+        center_y = box['y'] + box['height'] / 2
         
-        # 准备请求头 (Headers)
-        headers = {
-            'X-CSRF-TOKEN': csrf_token,
-            'Referer': SERVICE_URL, 
-            'Accept': 'text/vnd.turbo-stream.html, text/html, application/xhtml+xml'
-        }
-
-        # 准备表单数据 (Form Data / Payload)
-        form_data = {
-            '_token': csrf_token, 
-            'days': '7'          
-        }
-
-        response = page.request.post(
-            RENEW_API_URL,
-            headers=headers,
-            form=form_data,
-            fail_on_status_code=False
-        )
+        log(f"按钮中心坐标为: X={center_x}, Y={center_y}。模拟物理鼠标移动并点击...")
         
-        log(f"API 响应状态: {response.status}")
-
-        # 检查是否是我们预期的 302 Found
-        if response.status == 302:
-            invoice_url = response.headers.get('location')
+        page.mouse.move(center_x, center_y, steps=5)
+        page.wait_for_timeout(100)
+        page.mouse.click(center_x, center_y, delay=60)
+        
+        log("按钮已点击 (物理模拟)。正在等待发票页面内容加载...")
+        
+        try:
+            success_message_locator = page.locator(':text-matches("Success! Invoice")')
+            success_message_locator.wait_for(state="visible", timeout=30000)
             
-            if invoice_url and "/payment/invoice/" in invoice_url:
-                log(f"🎉 成功创建Invoice (API)！正在跳转到: {invoice_url}")
-                page.goto(invoice_url, wait_until="networkidle")
-            else:
-                log(f"❌ 错误：API返回了302，但没有找到有效的发票URL。Location: {invoice_url}")
-                raise Exception("API returned 302 but no valid invoice URL found.")
-        else:
-            log(f"❌ 错误：API请求失败。预期状态 302，但收到了 {response.status}。")
-            log(f"响应内容: {response.text()}")
-            page.screenshot(path="api_post_failed.png")
-            raise Exception(f"API request failed with status {response.status}.")
+            log(f"🎉 成功跳转到发票页面 (检测到Success消息)。")
+            log(f"当前 URL: {page.url}")
+            
+        except PlaywrightTimeoutError:
+            # +++ 关键诊断 +++
+            log("❌ 错误：点击 'Create Invoice' 后，未在30秒内检测到 'Success!' 消息。")
+            log("--- 诊断信息 ---")
+            log(f"超时时 URL: {page.url}")
+            try:
+                # 尝试获取并打印页面的前500个字符
+                content = page.content()
+                log(f"超时时页面内容 (前500字节): {content[:500]}")
+            except Exception as e:
+                log(f"获取页面内容失败: {e}")
+            log("--- 诊断结束 ---")
+            page.screenshot(path="invoice_content_timeout.png")
+            raise Exception("Failed to find success message after clicking 'Create Invoice'.")
         
         # +++ 步骤 3：在 *当前* 发票页面上操作 +++
         log("步骤 3: 正在查找可见的 'Pay' 按钮...")
@@ -176,7 +174,7 @@ def renew_service(page):
         pay_button.wait_for(state="visible", timeout=10000) 
         
         log("✅ 'Pay' 按钮已找到，正在点击...")
-        pay_button.click() 
+        pay_button.click()
         log("✅ 'Pay' 按钮已点击。")
         
         time.sleep(5)
@@ -186,7 +184,7 @@ def renew_service(page):
         return True
     
     except PlaywrightTimeoutError as e:
-        log(f"❌ 续费任务超时: 未在规定时间内找到元素。请检查选择器或页面是否已更改。错误: {e}")
+        log(f"❌ 续费任务超时: 未在规定时间内找到元素。错误: {e}")
         page.screenshot(path="renew_timeout_error.png")
         return False
     except Exception as e:
