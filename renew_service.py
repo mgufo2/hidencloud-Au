@@ -123,48 +123,36 @@ def renew_service(page):
         log("等待 0.9 秒...")
         time.sleep(0.9)
 
-        # +++ 解决方案：处理新标签页 (New Tab) 导航 +++
+        # +++ 解决方案：处理页面内部跳转 (In-Page Navigation) +++
         log("步骤 2: 正在查找 'Create Invoice' 按钮...")
         create_invoice_button = page.locator('button:has-text("Create Invoice")')
         create_invoice_button.wait_for(state="visible", timeout=30000)
         
-        log("✅ 'Create Invoice' 按钮已找到，正在点击并等待新标签页打开...")
-
-        # 核心修改：
-        # 1. 在点击前，准备 "监听" new page 事件
-        # 2. page.context.expect_page() 会返回一个 "PageEventInfo"
+        log("✅ 'Create Invoice' 按钮已找到，正在点击并等待 *当前页面* 跳转...")
+        
+        # 点击按钮，这将触发当前页面的导航
+        create_invoice_button.click()
+        
+        # 关键修改：
+        # 等待页面 URL 变为包含 /payment/invoice/ 的新 URL
+        # 使用 "domcontentloaded" 代替 "networkidle"，因为它更可靠且更快
         try:
-            with page.context.expect_page() as new_page_info:
-                create_invoice_button.click()  # 点击操作会触发新页面
-            
-            # 3. 从 PageEventInfo 中获取新的 page 对象
-            invoice_page = new_page_info.value
-            log(f"🎉 成功在新的标签页中打开页面: {invoice_page.url}")
-
-        except PlaywrightTimeoutError:
-            log("❌ 错误：点击 'Create Invoice' 后，没有新的标签页弹出。")
-            page.screenshot(path="invoice_new_tab_timeout.png")
-            raise Exception("Failed to open new tab after clicking 'Create Invoice'.")
-
-        # 4. (重要) 等待新页面加载完成并验证URL
-        try:
-            # 等待新标签页的URL变为发票URL
-            invoice_page.wait_for_url(
+            page.wait_for_url(
                 "**/payment/invoice/**", 
                 timeout=30000, 
-                wait_until="networkidle"
+                wait_until="domcontentloaded"  # <--- 这是关键变化！
             )
-            log(f"✅ 新的发票页面已加载: {invoice_page.url}")
+            log(f"🎉 成功跳转到发票页面: {page.url}")
         except PlaywrightTimeoutError:
-            log("❌ 错误：新标签页已打开，但 URL 不是预期的发票页面，或加载超时。")
-            invoice_page.screenshot(path="invoice_page_wrong_url.png")
-            raise Exception("New tab opened, but it was not the expected invoice page URL.")
+            log("❌ 错误：点击 'Create Invoice' 后，当前页面未在30秒内跳转到发票页面。")
+            page.screenshot(path="invoice_navigation_timeout.png")
+            raise Exception("Failed to navigate to invoice page after clicking 'Create Invoice'.")
         
-        # +++ 步骤 3：在新的发票页面上操作 +++
+        # +++ 步骤 3：在 *当前* 发票页面上操作 +++
         log("步骤 3: 正在查找可见的 'Pay' 按钮...")
         
-        # 关键: 必须在新的 'invoice_page' 上查找按钮，而不是在旧的 'page' 上
-        pay_button = invoice_page.locator('a:has-text("Pay"):visible, button:has-text("Pay"):visible').first
+        # 页面已跳转，我们现在在发票页上操作 'page' 对象
+        pay_button = page.locator('a:has-text("Pay"):visible, button:has-text("Pay"):visible').first
         pay_button.wait_for(state="visible", timeout=10000) 
         
         log("✅ 'Pay' 按钮已找到，正在点击...")
@@ -173,12 +161,7 @@ def renew_service(page):
         
         time.sleep(5)
         log("续费流程似乎已成功触发。请登录网站确认续费状态。")
-        
-        # 截取新页面的成功截图
-        invoice_page.screenshot(path="renew_success.png")
-        
-        # 别忘了关闭新打开的页面
-        invoice_page.close()
+        page.screenshot(path="renew_success.png")
         
         return True
     
