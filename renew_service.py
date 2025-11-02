@@ -118,16 +118,62 @@ def renew_service(page):
         renew_button.wait_for(state="visible", timeout=30000)
         renew_button.click()
         log("✅ 'Renew' 按钮已点击。")
+        
+        # --- 等待 0.9 秒 ---
+        log("等待 0.9 秒...")
+        time.sleep(0.9)
 
-        log("步骤 2: 正在查找并点击 'Create Invoice' 按钮...")
+# +++ 最终版代码：直接捕获重定向后的URL +++
+        log("步骤 2: 准备监听网络请求并点击 'Create Invoice' 按钮...")
+        
+        # 准备一个变量来存储我们捕获到的新URL
+        new_invoice_url = None
+
+        # 定义一个响应处理器函数
+        def handle_response(response):
+            nonlocal new_invoice_url
+            # 直接检查响应的最终URL是否是发票页面的URL
+            if "/payment/invoice/" in response.url:
+                new_invoice_url = response.url
+                log(f"🎉 成功捕获到重定向的发票URL: {new_invoice_url}")
+
+        # 在点击之前，启动网络响应监听
+        page.on("response", handle_response)
+        
+        # 查找并点击按钮
         create_invoice_button = page.locator('button:has-text("Create Invoice")')
         create_invoice_button.wait_for(state="visible", timeout=30000)
         create_invoice_button.click()
-        log("✅ 'Create Invoice' 按钮已点击。")
+        log("✅ 'Create Invoice' 按钮已点击，正在等待网络响应...")
 
-        log("步骤 3: 正在等待发票页面加载并查找 'Pay' 按钮...")
-        pay_button = page.locator('a:has-text("Pay"), button:has-text("Pay")').first
-        pay_button.wait_for(state="visible", timeout=90000)
+        # 使用一个更智能的循环来等待URL被捕获
+        timeout = 15  # seconds
+        for i in range(timeout):
+            if new_invoice_url:
+                break
+            page.wait_for_timeout(1000)
+        
+        # 停止监听，避免影响后续操作
+        page.remove_listener("response", handle_response)
+        
+        # 检查是否成功获取到URL
+        if new_invoice_url:
+            log(f"正在手动跳转到新发票页面: {new_invoice_url}")
+            # 如果当前URL已经是目标URL，则无需跳转
+            if page.url != new_invoice_url:
+                 page.goto(new_invoice_url, wait_until="networkidle", timeout=60000)
+            else:
+                 log("浏览器已自动跳转到正确页面，无需手动跳转。")
+        else:
+            log("❌ 错误：未能从网络响应中捕获到新发票的URL。")
+            raise Exception("Failed to capture new invoice URL from network response.")
+
+# +++ 修改后的代码 +++
+        log("步骤 3: 正在查找可见的 'Pay' 按钮...")
+        # 在选择器中直接加入 :visible 过滤器，确保只匹配当前可见的按钮
+        pay_button = page.locator('a:has-text("Pay"):visible, button:has-text("Pay"):visible').first
+        # 因为定位器已经确保是可见的，可以直接进行点击，但为了保险起见，可以保留一个短暂的等待
+        pay_button.wait_for(state="visible", timeout=10000) # 等待时间可以缩短
         
         log("✅ 'Pay' 按钮已找到，正在点击...")
         pay_button.click()
