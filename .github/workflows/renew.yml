@@ -4,7 +4,7 @@ name: HidenCloud Auto Renew
 on:
   workflow_dispatch:
   schedule:
-    - cron: '33 4 * * 3'
+    - cron: '42 16 * * 6'
 
 permissions:
   contents: write
@@ -65,6 +65,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "无变化，无需提交"
           else
-            git commit -m "?? 更新时间文件: $(date +'%Y-%m-%d %H:%M:%S')"
+            git commit -m "⏱️ 更新时间文件: $(date +'%Y-%m-%d %H:%M:%S')"
             git push origin HEAD:main
           fi
